@@ -1,0 +1,32 @@
+version = 0.1
+
+[default]
+[default.global.parameters]
+stack_name = "hold-my-coffee"
+region = "us-east-2"
+
+[default.build.parameters]
+cached = true
+parallel = true
+
+[default.validate.parameters]
+lint = true
+
+[default.deploy.parameters]
+stack_name = "hold-my-coffee"
+region = "us-east-2"
+capabilities = "CAPABILITY_IAM"
+confirm_changeset = true
+resolve_s3 = true
+tags = "Project=\"hold-my-coffee\" Environment=\"Development\""
+
+[default.sync.parameters]
+watch = false
+
+[default.local_start_api.parameters]
+port = 8080
+warm_containers = "EAGER"
+
+[default.local_start_lambda.parameters]
+port = 3001
+warm_containers = "EAGER"

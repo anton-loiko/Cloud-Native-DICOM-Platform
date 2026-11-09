@@ -1,0 +1,205 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: DICOM Medical Imaging Platform (AWS Serverless Architecture with Go & Graviton ARM64)
+
+Globals:
+  Function:
+    Timeout: 30
+    MemorySize: 256
+    Runtime: provided.al2023
+    Architectures:
+      - x86_64
+    Environment:
+      Variables:
+        DYNAMODB_TABLE_NAME: !Ref DicomMetadataTable
+        S3_BUCKET_NAME: !Ref DicomStorageBucket
+        DYNAMODB_ENDPOINT: ""
+
+Resources:
+  # ------------------------------------------------------------
+  # 1. Identity & Access: AWS Cognito User Pool
+  # ------------------------------------------------------------
+  CognitoUserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Sub '${AWS::StackName}-user-pool'
+      AutoVerifiedAttributes:
+        - email
+      UsernameAttributes:
+        - email
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireUppercase: true
+          RequireSymbols: false
+
+  CognitoUserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: !Sub '${AWS::StackName}-web-client'
+      UserPoolId: !Ref CognitoUserPool
+      GenerateSecret: false
+      ExplicitAuthFlows:
+        - ALLOW_USER_SRP_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+        - ALLOW_USER_PASSWORD_AUTH
+
+  # ------------------------------------------------------------
+  # 2. Storage: S3 Bucket with Medical CORS Configuration
+  # ------------------------------------------------------------
+  DicomStorageBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${AWS::StackName}-storage-${AWS::AccountId}-${AWS::Region}'
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders: ['*']
+            AllowedMethods: [GET, PUT, POST, HEAD]
+            AllowedOrigins: ['*']
+            MaxAge: 3600
+            ExposedHeaders:
+              - ETag
+              - Content-Length
+              - Content-Type
+              - Accept-Ranges
+
+  # ------------------------------------------------------------
+  # 3. Database: DynamoDB Single Table with GSI1
+  # ------------------------------------------------------------
+  DicomMetadataTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${AWS::StackName}-metadata'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+        - AttributeName: GSI1PK
+          AttributeType: S
+        - AttributeName: GSI1SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: GSI1
+          KeySchema:
+            - AttributeName: GSI1PK
+              KeyType: HASH
+            - AttributeName: GSI1SK
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+
+  # ------------------------------------------------------------
+  # 4. API Front-Door: HTTP API Gateway with JWT Authorizer
+  # ------------------------------------------------------------
+  DicomHttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      CorsConfiguration:
+        AllowMethods: [GET, POST, OPTIONS]
+        AllowHeaders: ['Content-Type', 'Authorization']
+        AllowOrigins: ['*']
+      Auth:
+        DefaultAuthorizer: CognitoAuthorizer
+        Authorizers:
+          CognitoAuthorizer:
+            IdentitySource: $request.header.Authorization
+            JwtConfiguration:
+              issuer: !Sub 'https://cognito-idp.${AWS::Region}.amazonaws.com/${CognitoUserPool}'
+              audience:
+                - !Ref CognitoUserPoolClient
+
+  # ------------------------------------------------------------
+  # 5. Ingestion Worker: S3-Triggered Go Lambda
+  # ------------------------------------------------------------
+  IngestFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: makefile
+    Properties:
+      CodeUri: .
+      Handler: bootstrap
+      Description: Parses DICOM headers on S3 upload and indexes metadata in DynamoDB
+      Policies:
+        - S3ReadPolicy:
+            BucketName: !Sub '${AWS::StackName}-storage-${AWS::AccountId}-${AWS::Region}'
+        - DynamoDBCrudPolicy:
+            TableName: !Ref DicomMetadataTable
+      Events:
+        S3ObjectCreated:
+          Type: S3
+          Properties:
+            Bucket: !Ref DicomStorageBucket
+            Events: s3:ObjectCreated:*
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: prefix
+                    Value: raw/
+
+  # ------------------------------------------------------------
+  # 6. REST API: HTTP API Go Lambda
+  # ------------------------------------------------------------
+  ApiFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: makefile
+    Properties:
+      CodeUri: .
+      Handler: bootstrap
+      Description: Serves DICOM catalog queries and generates pre-signed S3 URLs
+      Policies:
+        - S3CrudPolicy:
+            BucketName: !Sub '${AWS::StackName}-storage-${AWS::AccountId}-${AWS::Region}'
+        - DynamoDBCrudPolicy:
+            TableName: !Ref DicomMetadataTable
+      Events:
+        GetStudies:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref DicomHttpApi
+            Path: /api/studies
+            Method: GET
+        GetSeries:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref DicomHttpApi
+            Path: /api/studies/{studyUid}/series
+            Method: GET
+        GetInstances:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref DicomHttpApi
+            Path: /api/studies/{studyUid}/series/{seriesUid}/instances
+            Method: GET
+        PostUploadUrl:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref DicomHttpApi
+            Path: /api/upload-url
+            Method: POST
+
+Outputs:
+  ApiEndpoint:
+    Description: HTTP API Gateway endpoint
+    Value: !Sub 'https://${DicomHttpApi}.execute-api.${AWS::Region}.amazonaws.com'
+  CognitoUserPoolId:
+    Description: Cognito User Pool ID
+    Value: !Ref CognitoUserPool
+  CognitoClientId:
+    Description: Cognito User Pool Web Client ID
+    Value: !Ref CognitoUserPoolClient
+  S3BucketName:
+    Description: DICOM Storage S3 Bucket
+    Value: !Ref DicomStorageBucket
+  DynamoDBTableName:
+    Description: DICOM Metadata DynamoDB Table
+    Value: !Ref DicomMetadataTable
