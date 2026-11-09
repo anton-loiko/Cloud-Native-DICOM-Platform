@@ -62,7 +62,6 @@ fs.writeFileSync(path.join(rootDir, 'src/environments/environment.prod.ts'), pro
 const vercelConfigPath = path.join(rootDir, 'vercel.json');
 const vercelConfig = {
   $schema: 'https://openapi.vercel.sh/vercel.json',
-  cleanUrls: true,
   outputDirectory: 'dist/frontend/browser',
   rewrites: [
     {
