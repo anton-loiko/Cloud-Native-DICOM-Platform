@@ -1,0 +1,15 @@
+meta {
+  name: Get Study Series
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/api/studies/{{studyUid}}/series
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}

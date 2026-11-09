@@ -1,0 +1,202 @@
+openapi: 3.1.0
+info:
+  title: DICOM Medical Imaging Platform API
+  version: 1.0.0
+  description: Cloud-native DICOM ingestion, metadata catalog, and streaming viewer API.
+servers:
+  - url: http://localhost:8080
+    description: Local SAM development server
+  - url: https://api.example.com
+    description: AWS API Gateway HTTP v2 endpoint
+
+paths:
+  /api/upload-url:
+    post:
+      summary: Request Pre-signed S3 PUT URL
+      description: Returns a secure S3 Pre-signed URL for direct browser-to-S3 DICOM file upload.
+      operationId: getUploadUrl
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - filename
+              properties:
+                filename:
+                  type: string
+                  example: CT_scan_slice01.dcm
+                contentType:
+                  type: string
+                  default: application/dicom
+                  example: application/dicom
+      responses:
+        '200':
+          description: Pre-signed upload URL generated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  uploadUrl:
+                    type: string
+                  s3Key:
+                    type: string
+                  expiresIn:
+                    type: integer
+                    example: 900
+        '400':
+          description: Invalid request payload
+        '500':
+          description: Internal server error
+
+  /api/studies:
+    get:
+      summary: List all DICOM studies
+      description: Retrieves metadata for all indexed imaging studies.
+      operationId: listStudies
+      responses:
+        '200':
+          description: List of studies
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Study'
+        '500':
+          description: Internal server error
+
+  /api/studies/{studyUid}/series:
+    get:
+      summary: List series for a study
+      description: Retrieves all series belonging to a specific study UID.
+      operationId: getSeriesForStudy
+      parameters:
+        - name: studyUid
+          in: path
+          required: true
+          schema:
+            type: string
+          description: DICOM Study Instance UID
+      responses:
+        '200':
+          description: List of series
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Series'
+        '500':
+          description: Internal server error
+
+  /api/studies/{studyUid}/series/{seriesUid}/instances:
+    get:
+      summary: List instances (slices) for a series
+      description: Retrieves all instances in a series enriched with S3 Pre-signed GET streaming URLs.
+      operationId: getInstancesForSeries
+      parameters:
+        - name: studyUid
+          in: path
+          required: true
+          schema:
+            type: string
+          description: DICOM Study Instance UID
+        - name: seriesUid
+          in: path
+          required: true
+          schema:
+            type: string
+          description: DICOM Series Instance UID
+      responses:
+        '200':
+          description: List of instances with streaming URLs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Instance'
+        '500':
+          description: Internal server error
+
+components:
+  schemas:
+    Study:
+      type: object
+      properties:
+        studyInstanceUid:
+          type: string
+        patientId:
+          type: string
+        patientName:
+          type: string
+        studyDate:
+          type: string
+        studyDescription:
+          type: string
+        modalities:
+          type: array
+          items:
+            type: string
+        seriesCount:
+          type: integer
+        totalInstances:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+
+    Series:
+      type: object
+      properties:
+        studyInstanceUid:
+          type: string
+        seriesInstanceUid:
+          type: string
+        seriesNumber:
+          type: integer
+        seriesDescription:
+          type: string
+        modality:
+          type: string
+        numberOfInstances:
+          type: integer
+        bodyPartExamined:
+          type: string
+
+    Instance:
+      type: object
+      properties:
+        studyInstanceUid:
+          type: string
+        seriesInstanceUid:
+          type: string
+        sopInstanceUid:
+          type: string
+        instanceNumber:
+          type: integer
+        s3Key:
+          type: string
+        downloadUrl:
+          type: string
+        rows:
+          type: integer
+        columns:
+          type: integer
+        bitsAllocated:
+          type: integer
+        bitsStored:
+          type: integer
+        windowCenter:
+          type: number
+        windowWidth:
+          type: number
+        rescaleSlope:
+          type: number
+        rescaleIntercept:
+          type: number
+        photometricInterpretation:
+          type: string

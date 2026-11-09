@@ -1,0 +1,22 @@
+meta {
+  name: Get Presigned Upload URL
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/api/upload-url
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "filename": "chest_scan_slice01.dcm",
+    "contentType": "application/dicom"
+  }
+}

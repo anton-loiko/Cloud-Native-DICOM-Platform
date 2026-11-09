@@ -1,0 +1,15 @@
+meta {
+  name: Upload DICOM to S3
+  type: http
+  seq: 2
+}
+
+put {
+  url: {{uploadUrl}}
+  body: file
+  auth: none
+}
+
+body:file {
+  file: ../testdata/sample.dcm
+}

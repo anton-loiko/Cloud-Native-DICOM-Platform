@@ -1,0 +1,15 @@
+meta {
+  name: List Studies
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/api/studies
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
