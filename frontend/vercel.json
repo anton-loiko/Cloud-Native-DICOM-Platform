@@ -3,10 +3,6 @@
   "outputDirectory": "dist/frontend/browser",
   "rewrites": [
     {
-      "source": "/api/:path*",
-      "destination": "http://localhost:8080/api/:path*"
-    },
-    {
       "source": "/(.*)",
       "destination": "/index.html"
     }

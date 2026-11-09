@@ -26,11 +26,14 @@ if (fs.existsSync(envPath)) {
   });
 }
 
-const apiGatewayUrl = process.env.API_GATEWAY_URL || 'http://localhost:8080';
+const rawApiGatewayUrl = process.env.API_GATEWAY_URL || '';
+const cleanApiGatewayUrl = rawApiGatewayUrl.replace(/\/+$/, '');
+const isLocalhost = cleanApiGatewayUrl.includes('localhost') || cleanApiGatewayUrl.includes('127.0.0.1');
+const prodApiBaseUrl = (cleanApiGatewayUrl && !isLocalhost) ? `${cleanApiGatewayUrl}/api` : '/api';
 const cognitoRegion = process.env.COGNITO_REGION || '';
 const cognitoClientId = process.env.COGNITO_CLIENT_ID || '';
 
-console.log(`⚙️ [Config] API Gateway Proxy: ${apiGatewayUrl}`);
+console.log(`⚙️ [Config] API Gateway URL: ${cleanApiGatewayUrl || '(relative /api)'}`);
 console.log(`⚙️ [Config] Cognito Region: ${cognitoRegion ? cognitoRegion : '(Not configured - Dev mode only)'}`);
 console.log(`⚙️ [Config] Cognito Client ID: ${cognitoClientId ? cognitoClientId : '(Not configured - Dev mode only)'}`);
 
@@ -49,7 +52,7 @@ fs.writeFileSync(path.join(rootDir, 'src/environments/environment.ts'), devEnvCo
 // 2. Generate environment.prod.ts (Production)
 const prodEnvContent = `export const environment = {
   production: true,
-  apiBaseUrl: '/api',
+  apiBaseUrl: '${prodApiBaseUrl}',
   cognito: {
     region: '${cognitoRegion}',
     clientId: '${cognitoClientId}'
@@ -58,16 +61,12 @@ const prodEnvContent = `export const environment = {
 `;
 fs.writeFileSync(path.join(rootDir, 'src/environments/environment.prod.ts'), prodEnvContent);
 
-// 3. Update vercel.json rewrites
+// 3. Update vercel.json rewrites for SPA routing
 const vercelConfigPath = path.join(rootDir, 'vercel.json');
 const vercelConfig = {
   $schema: 'https://openapi.vercel.sh/vercel.json',
   outputDirectory: 'dist/frontend/browser',
   rewrites: [
-    {
-      source: '/api/:path*',
-      destination: `${apiGatewayUrl.replace(/\/+$/, '')}/api/:path*`
-    },
     {
       source: '/(.*)',
       destination: '/index.html'
