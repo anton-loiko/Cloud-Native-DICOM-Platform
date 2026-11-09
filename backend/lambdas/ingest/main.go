@@ -39,8 +39,18 @@ func NewIngestionHandler(ctx context.Context) (*IngestionHandler, error) {
 	}
 	dynamoClient := dynamodb.NewFromConfig(cfg, dynamoOptFns...)
 
+	s3Endpoint := os.Getenv("S3_ENDPOINT")
+	var s3OptFns []func(*s3.Options)
+	if s3Endpoint != "" {
+		s3OptFns = append(s3OptFns, func(o *s3.Options) {
+			o.BaseEndpoint = aws.String(s3Endpoint)
+			o.UsePathStyle = true
+		})
+	}
+	s3Client := s3.NewFromConfig(cfg, s3OptFns...)
+
 	return &IngestionHandler{
-		s3Client: s3.NewFromConfig(cfg),
+		s3Client: s3Client,
 		repo:     repository.NewDynamoDBRepository(dynamoClient, tableName),
 	}, nil
 }

@@ -31,6 +31,7 @@ local-db:
 
 local-db-init:
 	@echo "Creating table $(TABLE_NAME) with Single Table Schema (PK, SK, GSI1)..."
+	@AWS_CONFIG_FILE=/dev/null AWS_SHARED_CREDENTIALS_FILE=/dev/null AWS_ACCESS_KEY_ID=mock AWS_SECRET_ACCESS_KEY=mock AWS_REGION=$(REGION) \
 	aws dynamodb create-table \
 		--table-name $(TABLE_NAME) \
 		--attribute-definitions \
@@ -45,17 +46,19 @@ local-db-init:
 			"[{\"IndexName\":\"GSI1\",\"KeySchema\":[{\"AttributeName\":\"GSI1PK\",\"KeyType\":\"HASH\"},{\"AttributeName\":\"GSI1SK\",\"KeyType\":\"RANGE\"}],\"Projection\":{\"ProjectionType\":\"ALL\"}}]" \
 		--billing-mode PAY_PER_REQUEST \
 		--endpoint-url $(LOCAL_ENDPOINT) \
-		--region $(REGION)
+		--region $(REGION) 2>/dev/null || true
 	@echo " Table $(TABLE_NAME) created successfully in DynamoDB Local."
 
 local-db-seed:
 	@echo "Seeding sample CT study into $(TABLE_NAME)..."
+	@AWS_CONFIG_FILE=/dev/null AWS_SHARED_CREDENTIALS_FILE=/dev/null AWS_ACCESS_KEY_ID=mock AWS_SECRET_ACCESS_KEY=mock AWS_REGION=$(REGION) \
 	aws dynamodb put-item \
 		--table-name $(TABLE_NAME) \
 		--item '{"PK":{"S":"STUDY#1.3.6.1.4.1.14519.5.2.1.7009.2403.334240657131972136850343327463"},"SK":{"S":"METADATA"},"GSI1PK":{"S":"PATIENT#PAT-00941"},"GSI1SK":{"S":"DATE#20260312"},"studyInstanceUid":{"S":"1.3.6.1.4.1.14519.5.2.1.7009.2403.334240657131972136850343327463"},"patientId":{"S":"PAT-00941"},"patientName":{"S":"Kovacs^Alexander"},"studyDate":{"S":"20260312"},"studyDescription":{"S":"CT Chest with IV Contrast (High-Res Pulm)"},"modalities":{"L":[{"S":"CT"}]},"seriesCount":{"N":"1"},"totalInstances":{"N":"10"},"createdAt":{"S":"2026-11-09T00:00:00Z"}}' \
 		--endpoint-url $(LOCAL_ENDPOINT) \
 		--region $(REGION)
-	@aws dynamodb put-item \
+	@AWS_CONFIG_FILE=/dev/null AWS_SHARED_CREDENTIALS_FILE=/dev/null AWS_ACCESS_KEY_ID=mock AWS_SECRET_ACCESS_KEY=mock AWS_REGION=$(REGION) \
+	aws dynamodb put-item \
 		--table-name $(TABLE_NAME) \
 		--item '{"PK":{"S":"STUDY#1.3.6.1.4.1.14519.5.2.1.7009.2403.334240657131972136850343327463"},"SK":{"S":"SERIES#1.3.6.1.4.1.14519.5.2.1.7009.2403.334240657131972136850343327463.1"},"studyInstanceUid":{"S":"1.3.6.1.4.1.14519.5.2.1.7009.2403.334240657131972136850343327463"},"seriesInstanceUid":{"S":"1.3.6.1.4.1.14519.5.2.1.7009.2403.334240657131972136850343327463.1"},"seriesNumber":{"N":"1"},"seriesDescription":{"S":"Axial Soft Tissue 2.5mm"},"modality":{"S":"CT"},"numberOfInstances":{"N":"10"},"bodyPartExamined":{"S":"CHEST"}}' \
 		--endpoint-url $(LOCAL_ENDPOINT) \
@@ -65,6 +68,24 @@ local-db-seed:
 local-db-down:
 	@docker rm -f dynamodb-local 2>/dev/null || true
 	@echo " DynamoDB Local stopped."
+
+# -------------------------------------------------------------
+# Local S3 Automation (Docker-based S3 emulation)
+# -------------------------------------------------------------
+local-s3:
+	@docker network inspect $(DOCKER_NETWORK) >/dev/null 2>&1 || docker network create $(DOCKER_NETWORK)
+	@docker run -d --name s3-local --network $(DOCKER_NETWORK) -p 9090:9090 -e initialBuckets=hold-my-coffee-storage-local adobe/s3mock:latest || true
+	@echo " S3 Local is running on http://localhost:9090 in network $(DOCKER_NETWORK)"
+
+local-s3-init:
+	@echo "Ensuring S3 bucket hold-my-coffee-storage-local exists in S3 Local..."
+	@AWS_ACCESS_KEY_ID=mock AWS_SECRET_ACCESS_KEY=mock AWS_REGION=$(REGION) \
+		aws s3 mb s3://hold-my-coffee-storage-local --endpoint-url http://localhost:9090 2>/dev/null || true
+	@echo " S3 bucket hold-my-coffee-storage-local is ready."
+
+local-s3-down:
+	@docker rm -f s3-local 2>/dev/null || true
+	@echo " S3 Local stopped."
 
 local-api:
 	sam local start-api --docker-network $(DOCKER_NETWORK) --env-vars local-env.json --port 8080

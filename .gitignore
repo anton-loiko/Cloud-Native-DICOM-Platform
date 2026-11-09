@@ -16,8 +16,6 @@ samconfig.toml.bak
 *.out
 backend/bin/
 
-# Frontend (deferred)
-frontend/
 
 # Local SAM environment overrides
 backend/local-env.json
